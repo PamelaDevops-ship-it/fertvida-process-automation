@@ -1,0 +1,307 @@
+# Fase 2: Web Scraping e Processamento de Dados
+
+## 📋 Resumo
+
+Nesta fase, você vai:
+
+1. ✅ Extrair dados do Clinicys via web scraping (Selenium)
+2. ✅ Processar e limpar os dados (Pandas)
+3. ✅ Atualizar a planilha Excel automaticamente
+4. ✅ Orquestrar tudo com um script Bash
+
+---
+
+## 🗂️ Arquivos Criados
+
+```
+├── extract_clinicys.py      # Extrai dados do Clinicys
+├── process_data.py          # Processa e limpa dados
+├── update_sheets.py         # Atualiza planilhas Excel
+├── run_monthly_report.sh    # Orquestra tudo
+└── FASE_2_WEB_SCRAPING.md   # Este arquivo
+```
+
+---
+
+## 🔧 Como Funciona
+
+### 1️⃣ **extract_clinicys.py**
+
+**O que faz:**
+- Acessa o Clinicys automaticamente
+- Faz login com suas credenciais
+- Navega até "Relatórios" → "Extrato de Atendimentos"
+- Filtra por médico e período
+- Extrai a tabela de dados
+
+**Saída:**
+```
+dados_clinicys.csv
+```
+
+**Exemplo de execução:**
+```python
+from extract_clinicys import ClinicysExtractor
+
+extrator = ClinicysExtractor()
+df = extrator.run(
+    doctors=["Dra. Sara", "Dr. André"],
+    start_date="01/07/2026",
+    end_date="31/07/2026"
+)
+```
+
+---
+
+### 2️⃣ **process_data.py**
+
+**O que faz:**
+- Carrega o CSV extraído
+- Limpa dados (remove vazios, duplicatas)
+- Formata telefones e nomes
+- Valida integridade
+- Gera sumário
+
+**Saída:**
+```
+dados_processados.xlsx
+```
+
+**Exemplo de execução:**
+```python
+from process_data import DataProcessor
+
+processor = DataProcessor()
+df = processor.run(
+    csv_file="dados_clinicys.csv",
+    output_excel="dados_processados.xlsx"
+)
+```
+
+---
+
+### 3️⃣ **update_sheets.py**
+
+**O que faz:**
+- Carrega dados processados
+- Prepara no formato da planilha padrão
+- Aplica formatação profissional
+- Cria um arquivo para cada médico
+
+**Saída:**
+```
+outputs/CONTROLE_DE_ERROS_REATIVAÇÃO_-_DRA__SARA.xlsx
+outputs/CONTROLE_DE_ERROS_REATIVAÇÃO_-_DR__ANDRÉ.xlsx
+```
+
+**Exemplo de execução:**
+```python
+from update_sheets import SheetUpdater
+
+updater = SheetUpdater()
+updater.update_multiple_doctors(
+    template_file="CONTROLE_DE_ERROS_REATIVAÇÃO_-_DRA__SARÁ__1_.xlsx",
+    output_dir="./outputs",
+    processed_data_csv="dados_processados.csv",
+    doctors=["Dra. Sara", "Dr. André"]
+)
+```
+
+---
+
+### 4️⃣ **run_monthly_report.sh**
+
+**O que faz:**
+- Executa os 3 scripts em sequência
+- Verifica dependências
+- Trata erros
+- Gera log de execução
+
+**Como executar:**
+```bash
+# Dar permissão
+chmod +x run_monthly_report.sh
+
+# Executar
+./run_monthly_report.sh
+```
+
+---
+
+## 🚀 Como Começar
+
+### Passo 1: Configurar .env
+
+Copie `.env.example` para `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Abra o arquivo e preencha:
+```
+CLINICYS_USERNAME=seu_usuario
+CLINICYS_PASSWORD=sua_senha
+CLINICYS_URL=https://sistema.clinicys.com.br/Fertgroup/menu.php
+GOOGLE_SHEET_ID=seu_sheet_id (para próximas fases)
+```
+
+---
+
+### Passo 2: Instalar Dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+**Dependências:**
+- `selenium` - Web scraping
+- `pandas` - Processamento de dados
+- `openpyxl` - Manipulação de Excel
+- `python-dotenv` - Variáveis de ambiente
+
+---
+
+### Passo 3: Testar Extração
+
+Execute manualmente:
+
+```bash
+python3 extract_clinicys.py
+```
+
+Isso vai:
+1. Abrir o navegador (você verá)
+2. Fazer login
+3. Navegar até o relatório
+4. Extrair dados
+5. Salvar em `dados_clinicys.csv`
+
+---
+
+### Passo 4: Testar Processamento
+
+```bash
+python3 process_data.py
+```
+
+Isso vai:
+1. Carregar dados brutos
+2. Limpar e validar
+3. Exportar em `dados_processados.xlsx`
+
+---
+
+### Passo 5: Testar Atualização
+
+```bash
+python3 update_sheets.py
+```
+
+Isso vai:
+1. Ler dados processados
+2. Criar arquivos em `outputs/`
+3. Um arquivo por médico, formatado
+
+---
+
+### Passo 6: Executar Automação Completa
+
+```bash
+bash run_monthly_report.sh
+```
+
+Isso executa os 4 passos anteriores automaticamente.
+
+---
+
+## 📊 Estrutura de Dados
+
+### Entrada (Clinicys)
+
+```
+| Data do Atendimento | Paciente | Prontuário | Procedimento | Médico |
+|-------------------|----------|-----------|-------------|--------|
+| 01/07/2026        | KASSIA   | P001      | USG         | Dra. Sara |
+```
+
+### Saída (Excel)
+
+```
+| ID Paciente | Nome Completo | Telefone | Data Atendimento | Procedimento | Respondeu? | ... | Médico |
+|-------------|---------------|----------|------------------|-------------|-----------|-----|--------|
+| P001        | KASSIA        | 86999... | 01/07/2026       | USG         | [vazio]   | ... | Dra. Sara |
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Erro: "CLINICYS_USERNAME e CLINICYS_PASSWORD não configuradas"
+
+**Solução:** Preencha o arquivo `.env`
+
+```bash
+cat .env
+```
+
+---
+
+### Erro: "Falha ao conectar ao Clinicys"
+
+**Solução:** Verifique:
+1. Username e password corretos
+2. URL do Clinicys correta
+3. Conexão com internet
+4. Se o Clinicys está online
+
+---
+
+### Erro: "Elemento não encontrado" no Selenium
+
+**Solução:**
+- O layout do Clinicys pode ter mudado
+- Descomente `--headless` em `extract_clinicys.py` para ver o navegador
+- Atualize os seletores (XPath, ID, etc) conforme necessário
+
+---
+
+### Dados incompletos na planilha
+
+**Solução:**
+1. Verifique o CSV gerado: `dados_clinicys.csv`
+2. Valide os dados: adicione `processor.validate_data()`
+3. Limpe manualmente dados vazios
+
+---
+
+## 📈 Próximas Fases
+
+- **Fase 3:** Google Sheets API (integração em tempo real)
+- **Fase 4:** Agendamento automático com Cron
+- **Fase 5:** Notificações e alertas
+
+---
+
+## 📝 Notas
+
+- Todos os scripts têm logging detalhado
+- Dados sensíveis não são versionados (veja `.gitignore`)
+- Credenciais armazenadas em `.env` (não em código)
+
+---
+
+## ✅ Checklist
+
+- [ ] `.env` preenchido
+- [ ] Dependências instaladas
+- [ ] Script de extração testado
+- [ ] Script de processamento testado
+- [ ] Script de atualização testado
+- [ ] Automação completa (`run_monthly_report.sh`) testada
+- [ ] Arquivos Excel verificados
+- [ ] Commit no Git realizado
+
+---
+
+**Próximo passo:** Quando tudo estiver funcionando, fazemos a integração com Google Sheets na Fase 3! 🚀
