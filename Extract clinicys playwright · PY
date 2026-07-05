@@ -1,0 +1,281 @@
+"""
+Script para extrair dados do Clinicys - Extrato de Atendimentos
+Usando Playwright (mais simples que Selenium)
+"""
+
+from playwright.sync_api import sync_playwright
+import pandas as pd
+from datetime import datetime, timedelta
+import time
+import os
+from dotenv import load_dotenv
+import logging
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Carregar variáveis de ambiente
+load_dotenv()
+
+class ClinicysExtractor:
+    def __init__(self):
+        """Inicializar o extrator do Clinicys"""
+        self.url = os.getenv('CLINICYS_URL', 'https://sistema.clinicys.com.br/Fertgroup/menu.php')
+        self.username = os.getenv('CLINICYS_USERNAME')
+        self.password = os.getenv('CLINICYS_PASSWORD')
+        self.page = None
+        self.context = None
+        self.browser = None
+        
+        if not self.username or not self.password:
+            raise ValueError("CLINICYS_USERNAME e CLINICYS_PASSWORD não configuradas no .env")
+        
+        logger.info("ClinicysExtractor inicializado")
+
+    def launch_browser(self):
+        """Iniciar navegador Playwright"""
+        try:
+            self.playwright = sync_playwright().start()
+            
+            # Usar Firefox (mais leve)
+            self.browser = self.playwright.firefox.launch(headless=True)
+            self.context = self.browser.new_context()
+            self.page = self.context.new_page()
+            
+            logger.info("Navegador Playwright iniciado")
+            
+        except Exception as e:
+            logger.error(f"Erro ao iniciar navegador: {str(e)}")
+            raise
+
+    def login(self):
+        """Fazer login no Clinicys"""
+        try:
+            logger.info(f"Acessando {self.url}")
+            self.page.goto(self.url, wait_until='networkidle')
+            
+            # Aguardar carregamento
+            self.page.wait_for_timeout(2000)
+            
+            # Preencher username
+            self.page.fill('#user, input[name="user"]', self.username)
+            logger.info("Username preenchido")
+            
+            # Preencher password
+            self.page.fill('#password, input[name="password"]', self.password)
+            logger.info("Password preenchido")
+            
+            # Clicar botão login
+            self.page.click('button[type="submit"]')
+            
+            # Aguardar redirecionamento
+            self.page.wait_for_timeout(3000)
+            logger.info("Login realizado com sucesso")
+            
+        except Exception as e:
+            logger.error(f"Erro ao fazer login: {str(e)}")
+            raise
+
+    def navigate_to_report(self):
+        """Navegar até Relatórios > Extrato de Atendimentos"""
+        try:
+            # Clicar em Relatórios
+            self.page.click('a:has-text("Relatórios")')
+            self.page.wait_for_timeout(1000)
+            logger.info("Menu Relatórios clicado")
+            
+            # Clicar em "Extrato de Atendimentos"
+            self.page.click('a:has-text("Extrato de Atendimentos")')
+            self.page.wait_for_timeout(2000)
+            logger.info("Relatório 'Extrato de Atendimentos' aberto")
+            
+        except Exception as e:
+            logger.error(f"Erro ao navegar: {str(e)}")
+            raise
+
+    def set_filters(self, doctor_name, start_date, end_date):
+        """
+        Definir filtros no relatório
+        
+        Args:
+            doctor_name: Nome do médico (ex: "Dra. Sara")
+            start_date: Data inicial (formato: "01/07/2026")
+            end_date: Data final (formato: "31/07/2026")
+        """
+        try:
+            # Selecionar médico
+            self.page.select_option('select[name="medico"], select', doctor_name)
+            logger.info(f"Médico '{doctor_name}' selecionado")
+            
+            # Preencher data inicial
+            date_inputs = self.page.query_selector_all('input[placeholder*="dd/mm"]')
+            if len(date_inputs) > 0:
+                date_inputs[0].fill(start_date)
+                logger.info(f"Data inicial '{start_date}' preenchida")
+            
+            # Preencher data final
+            if len(date_inputs) > 1:
+                date_inputs[1].fill(end_date)
+                logger.info(f"Data final '{end_date}' preenchida")
+            
+            self.page.wait_for_timeout(1000)
+            
+        except Exception as e:
+            logger.error(f"Erro ao definir filtros: {str(e)}")
+            raise
+
+    def apply_report(self):
+        """Clicar no botão 'Atualizar relatório'"""
+        try:
+            self.page.click('button:has-text("Atualizar")')
+            self.page.wait_for_timeout(3000)
+            logger.info("Relatório atualizado")
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar relatório: {str(e)}")
+            raise
+
+    def extract_table_data(self, doctor_name):
+        """
+        Extrair dados da tabela do relatório
+        
+        Returns:
+            DataFrame com os dados extraídos
+        """
+        try:
+            # Aguardar a tabela
+            self.page.wait_for_selector('table', timeout=10000)
+            
+            # Extrair headers
+            header_cells = self.page.query_selector_all('table thead th')
+            headers = [cell.inner_text() for cell in header_cells]
+            
+            # Extrair linhas
+            rows = []
+            body_rows = self.page.query_selector_all('table tbody tr')
+            
+            for row in body_rows:
+                cells = row.query_selector_all('td')
+                row_data = [cell.inner_text().strip() for cell in cells]
+                
+                if row_data:
+                    rows.append(row_data)
+            
+            # Criar DataFrame
+            if headers and rows:
+                df = pd.DataFrame(rows, columns=headers)
+                df['Médico'] = doctor_name
+                
+                logger.info(f"Extraídos {len(df)} registros para {doctor_name}")
+                return df
+            else:
+                logger.warning("Nenhum dado extraído da tabela")
+                return pd.DataFrame()
+            
+        except Exception as e:
+            logger.error(f"Erro ao extrair dados: {str(e)}")
+            raise
+
+    def extract_multiple_doctors(self, doctors, start_date, end_date):
+        """
+        Extrair dados para múltiplos médicos
+        
+        Args:
+            doctors: Lista de nomes de médicos
+            start_date: Data inicial
+            end_date: Data final
+            
+        Returns:
+            DataFrame consolidado
+        """
+        all_data = pd.DataFrame()
+        
+        for doctor in doctors:
+            try:
+                logger.info(f"Extraindo dados para {doctor}...")
+                
+                self.set_filters(doctor, start_date, end_date)
+                self.apply_report()
+                
+                df = self.extract_table_data(doctor)
+                all_data = pd.concat([all_data, df], ignore_index=True)
+                
+            except Exception as e:
+                logger.error(f"Erro ao processar {doctor}: {str(e)}")
+                continue
+        
+        return all_data
+
+    def close(self):
+        """Fechar o navegador"""
+        try:
+            if self.page:
+                self.page.close()
+            if self.context:
+                self.context.close()
+            if self.browser:
+                self.browser.close()
+            if self.playwright:
+                self.playwright.stop()
+            logger.info("Navegador fechado")
+        except Exception as e:
+            logger.error(f"Erro ao fechar navegador: {str(e)}")
+
+    def run(self, doctors, start_date, end_date):
+        """
+        Executar extração completa
+        
+        Args:
+            doctors: Lista de nomes de médicos
+            start_date: Data inicial (formato: "01/07/2026")
+            end_date: Data final (formato: "31/07/2026")
+            
+        Returns:
+            DataFrame com os dados extraídos
+        """
+        try:
+            self.launch_browser()
+            self.login()
+            self.navigate_to_report()
+            
+            data = self.extract_multiple_doctors(doctors, start_date, end_date)
+            
+            logger.info(f"Extração concluída: {len(data)} registros")
+            return data
+            
+        finally:
+            self.close()
+
+
+# Exemplo de uso
+if __name__ == "__main__":
+    # Data do mês atual
+    hoje = datetime.now()
+    primeiro_dia = hoje.replace(day=1)
+    ultimo_dia = (primeiro_dia + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    
+    start_date = primeiro_dia.strftime("%d/%m/%Y")
+    end_date = ultimo_dia.strftime("%d/%m/%Y")
+    
+    # Médicos a extrair
+    doctors = ["Dra. Sara", "Dr. André"]
+    
+    logger.info(f"Iniciando extração para o período: {start_date} a {end_date}")
+    
+    # Executar extração
+    extrator = ClinicysExtractor()
+    df = extrator.run(doctors, start_date, end_date)
+    
+    # Salvar em CSV
+    if not df.empty:
+        df.to_csv("dados_clinicys.csv", index=False, encoding="utf-8-sig")
+        print(f"\n✓ Dados salvos em 'dados_clinicys.csv'")
+        print(f"✓ Total de registros: {len(df)}")
+        print("\nPrimeiras linhas:")
+        print(df.head())
+    else:
+        print("\n✗ Nenhum dado foi extraído!")
