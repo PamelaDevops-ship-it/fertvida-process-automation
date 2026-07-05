@@ -1,0 +1,132 @@
+#!/bin/bash
+
+###############################################
+# Script para executar automação mensal do Clinicys
+# Extrai dados, processa e atualiza planilhas
+###############################################
+
+set -e  # Parar em caso de erro
+
+# Cores para output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'  # No Color
+
+# Função para exibir mensagens
+print_header() {
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}============================================${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+# Diretório do script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Verificar se .env existe
+if [ ! -f .env ]; then
+    print_error ".env não encontrado!"
+    print_warning "Copie .env.example para .env e preencha as credenciais"
+    exit 1
+fi
+
+# Carregar variáveis de ambiente
+export $(cat .env | xargs)
+
+print_header "AUTOMAÇÃO MENSAL - CLINICYS DATA EXPORTER"
+
+# Passo 1: Verificar dependências
+print_header "Passo 1: Verificar dependências"
+
+if ! command -v python3 &> /dev/null; then
+    print_error "Python 3 não encontrado!"
+    exit 1
+fi
+
+print_success "Python 3 encontrado"
+
+# Passo 2: Criar virtualenv (opcional)
+print_header "Passo 2: Preparar ambiente Python"
+
+if [ ! -d "venv" ]; then
+    print_warning "Ambiente virtual não encontrado. Criando..."
+    python3 -m venv venv
+fi
+
+source venv/bin/activate
+print_success "Ambiente virtual ativado"
+
+# Passo 3: Instalar dependências
+print_header "Passo 3: Instalar dependências"
+
+pip install -q -r requirements.txt
+print_success "Dependências instaladas"
+
+# Passo 4: Extrair dados do Clinicys
+print_header "Passo 4: Extrair dados do Clinicys"
+
+python3 extract_clinicys.py
+if [ $? -eq 0 ]; then
+    print_success "Dados extraídos: dados_clinicys.csv"
+else
+    print_error "Erro ao extrair dados"
+    exit 1
+fi
+
+# Passo 5: Processar dados
+print_header "Passo 5: Processar e limpar dados"
+
+python3 process_data.py
+if [ $? -eq 0 ]; then
+    print_success "Dados processados: dados_processados.xlsx"
+else
+    print_error "Erro ao processar dados"
+    exit 1
+fi
+
+# Passo 6: Atualizar planilhas Excel
+print_header "Passo 6: Atualizar planilhas Excel"
+
+python3 update_sheets.py
+if [ $? -eq 0 ]; then
+    print_success "Planilhas atualizadas"
+else
+    print_error "Erro ao atualizar planilhas"
+    exit 1
+fi
+
+# Passo 7: Limpeza e resumo
+print_header "Passo 7: Limpeza"
+
+# Comprimir arquivos antigos (opcional)
+mkdir -p ./arquivos_antigos
+mv dados_clinicys.csv ./arquivos_antigos/dados_clinicys_$(date +%Y%m%d_%H%M%S).csv 2>/dev/null || true
+
+print_success "Automação concluída com sucesso!"
+
+# Resumo final
+echo ""
+print_header "RESUMO"
+echo -e "${GREEN}Data/Hora: $(date '+%d/%m/%Y %H:%M:%S')${NC}"
+echo -e "${GREEN}Arquivos gerados:${NC}"
+ls -lh outputs/ 2>/dev/null || echo "  - Nenhum arquivo em outputs/"
+echo ""
+
+# Deactivate virtual environment
+deactivate
+
+exit 0
